@@ -1,4 +1,4 @@
-package com.christos_bramis.bram_vortex_pipeline_generator;
+package com.christos_bramis.bram_vortex_execution;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

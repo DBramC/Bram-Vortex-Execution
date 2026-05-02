@@ -1,6 +1,6 @@
-package com.christos_bramis.bram_vortex_pipeline_generator.config;
+package com.christos_bramis.bram_vortex_execution.config;
 
-import com.christos_bramis.bram_vortex_pipeline_generator.service.VaultService;
+import com.christos_bramis.bram_vortex_execution.service.VaultService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import jakarta.annotation.PostConstruct;
@@ -59,8 +59,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 /* * Η ΑΛΛΑΓΗ ΕΔΩ:
                  * Αποθηκεύουμε το 'token' στα credentials.
-                 * Αυτό επιτρέπει στο Pipeline Service να έχει πρόσβαση στο JWT
-                 * αν χρειαστεί να το προωθήσει σε επόμενο service (π.χ. Pipeline).
+                 * Αυτό επιτρέπει στο Execu\tion Service να έχει πρόσβαση στο JWT
+                 * αν χρειαστεί να το προωθήσει σε επόμενο service
                  */
                 UsernamePasswordAuthenticationToken auth =
                         new UsernamePasswordAuthenticationToken(userId, token, Collections.emptyList());
@@ -68,7 +68,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 SecurityContextHolder.getContext().setAuthentication(auth);
 
             } catch (Exception e) {
-                System.out.println("⛔ Invalid Token in Pipeline Gen: " + e.getMessage());
+                System.out.println("⛔ Invalid Token in Execution: " + e.getMessage());
             }
         }
         filterChain.doFilter(request, response);

@@ -1,4 +1,4 @@
-package com.christos_bramis.bram_vortex_pipeline_generator.config;
+package com.christos_bramis.bram_vortex_execution.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -41,9 +41,7 @@ public class SecurityConfig {
 
                 // 4. Κανόνες Πρόσβασης
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/pipeline/generate/**").authenticated()
-                        .requestMatchers("/pipeline/download/**").authenticated()
-                        .requestMatchers("/pipeline/status/**").authenticated()
+                        .requestMatchers("/execution/execute/**").authenticated()
                         .anyRequest().authenticated()
                 )
 

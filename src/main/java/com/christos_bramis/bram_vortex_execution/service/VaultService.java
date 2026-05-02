@@ -1,4 +1,4 @@
-package com.christos_bramis.bram_vortex_pipeline_generator.service;
+package com.christos_bramis.bram_vortex_execution.service;
 
 import org.springframework.stereotype.Service;
 import org.springframework.vault.core.VaultTemplate;
@@ -17,6 +17,21 @@ public class VaultService {
     public VaultService(VaultTemplate vaultTemplate) {
         this.vaultTemplate = vaultTemplate;
     }
+
+
+    public String getGithubToken(String username) {
+        String path = "secret/users/" + username + "/github";
+        try {
+            VaultResponse response = vaultTemplate.read(path);
+            if (response != null && response.getData() != null) {
+                return (String) response.getData().get("github_token");
+            }
+        } catch (Exception e) {
+            System.err.println("Error fetching token from Vault: " + e.getMessage());
+        }
+        return null;
+    }
+
 
     // Ανάκτηση του Public Key από το Transit engine της Vault
     public String getSigningPublicKey() {

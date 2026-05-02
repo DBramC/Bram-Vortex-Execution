@@ -12,7 +12,7 @@ import org.hibernate.type.SqlTypes;
 public class ValidatorJob {
 
     @Id
-    @Column(name = "id", insertable = false, updatable = false)
+    @Column(name = "analysis_job_id", insertable = false, updatable = false)
     private String jobId;
 
     @JdbcTypeCode(SqlTypes.BINARY)

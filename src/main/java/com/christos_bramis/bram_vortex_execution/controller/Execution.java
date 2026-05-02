@@ -18,16 +18,16 @@ public class Execution {
     }
 
     @PostMapping("/execute")
-    public ResponseEntity<?> runExecution(@RequestBody Map<String, Object> request, Authentication authentication) {
-        String username = authentication.getName(); // Το username έρχεται αυτόματα από το JWT[cite: 1]
-        String repoUrl = (String) request.get("repoUrl");
-        Map<String, String> generatedFiles = (Map<String, String>) request.get("files");
+    public ResponseEntity<?> run(@RequestBody Map<String, Object> payload, Authentication auth) {
+        String username = auth.getName(); // Από το JWT Filter[cite: 3]
+        String jobId = payload.get("jobId").toString();
+        String repoUrl = payload.get("repoUrl").toString();
 
         try {
-            executionService.executeCommit(username, repoUrl, generatedFiles);
-            return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "Commit pushed and CI/CD triggered ( Provided by Bram-Vortex application \uD83C\uDF2A️ ) "));
+            executionService.processDeployment(username, jobId, repoUrl);
+            return ResponseEntity.ok("Success: Master ZIP deployed to root.");
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("status", "ERROR", "message", e.getMessage()));
+            return ResponseEntity.status(500).body("Error: " + e.getMessage());
         }
     }
 

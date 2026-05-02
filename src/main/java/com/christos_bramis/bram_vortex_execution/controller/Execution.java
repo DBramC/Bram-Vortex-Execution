@@ -25,7 +25,7 @@ public class Execution {
 
         try {
             executionService.executeCommit(username, repoUrl, generatedFiles);
-            return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "Commit pushed and CI/CD triggered ( Provided by Bram-Vortex application \uD83C\uDF2A️ ️ ) "));
+            return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "Commit pushed and CI/CD triggered ( Provided by Bram-Vortex application \uD83C\uDF2A️ ) "));
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("status", "ERROR", "message", e.getMessage()));
         }

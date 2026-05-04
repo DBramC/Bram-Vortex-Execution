@@ -12,6 +12,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -68,6 +69,7 @@ public class ExecutionService {
 
                 // 4. Commit & Push
                 System.out.println("📝 [EXECUTOR] Step 6: Committing changes...");
+                System.out.println("Files to commit: " + new File(tempPath.toString()).listFiles().length);
                 git.add().addFilepattern(".").call();
                 git.commit()
                         .setMessage("Bram Vortex: Infrastructure and Pipelines Setup")
@@ -78,10 +80,10 @@ public class ExecutionService {
 
                 Iterable<PushResult> results = git.push()
                         .setRemote("origin")
-                        .setRefSpecs(new RefSpec("refs/heads/main:refs/heads/main")) // Επιβολή push στο main
+                        // Αυτό αναγκάζει το τοπικό master/main να πάει στο remote main
+                        .setRefSpecs(new org.eclipse.jgit.transport.RefSpec("HEAD:refs/heads/main"))
                         .setCredentialsProvider(new UsernamePasswordCredentialsProvider(githubToken, ""))
                         .call();
-
                 // Έλεγχος αν το push έγινε όντως δεκτό από το GitHub
                 for (PushResult result : results) {
                     for (RemoteRefUpdate update : result.getRemoteUpdates()) {

@@ -13,14 +13,14 @@ public class ValidatorJob {
 
     @Id
     @Column(name = "analysis_job_id", insertable = false, updatable = false)
-    private String jobId;
+    private String analysisJobId;
 
     @JdbcTypeCode(SqlTypes.BINARY)
     @Column(name = "validated_master_zip", columnDefinition = "bytea", insertable = false, updatable = false)
     private byte[] masterZip;
 
     // Βάζουμε ΜΟΝΟ Getters. Καθόλου Setters για να είναι 100% Read-Only!
-    public String getJobId() { return jobId; }
+    public String getJobId() { return analysisJobId; }
     public byte[] getMasterZip() {
         return masterZip;
     }

@@ -5,15 +5,14 @@ import com.christos_bramis.bram_vortex_execution.repository.ValidatorJobsReposit
 import org.apache.tomcat.util.http.fileupload.FileUtils;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -28,38 +27,66 @@ public class ExecutionService {
         this.validatorJobsRepository = validatorJobsRepository;
     }
 
-    public void processDeployment(String username, String jobId, String repoUrl) throws Exception {
-        // 1. Τραβάμε το Job από τη βάση
-        ValidatorJob job = validatorJobsRepository.findById(jobId)
-                .orElseThrow(() -> new RuntimeException("Job not found"));
+    @Async // Εξασφαλίζει ότι τρέχει στο background
+    public void processDeployment(String username, String jobId, String repoUrl) {
+        System.out.println("🛠️ [EXECUTOR] Starting Deployment Sequence for Job: " + jobId);
 
-        // 2. Παίρνουμε το Token από το Vault
-        String githubToken = vaultService.getGithubToken(username);
+        try {
+            // 1. Τραβάμε το Job από τη βάση
+            System.out.println("🔍 [EXECUTOR] Step 1: Fetching master_zip from database...");
+            ValidatorJob job = validatorJobsRepository.findById(jobId)
+                    .orElseThrow(() -> new RuntimeException("Job ID " + jobId + " not found in database. Check if table name is correct!"));
 
-        // 3. Clone & Extract Logic
-        Path tempPath = Files.createTempDirectory("vortex-exec-");
+            if (job.getMasterZip() == null || job.getMasterZip().length == 0) {
+                throw new RuntimeException("Master ZIP is empty or null for job: " + jobId);
+            }
+            System.out.println("✅ [EXECUTOR] Master ZIP found. Size: " + job.getMasterZip().length + " bytes");
 
-        try (Git git = Git.cloneRepository()
-                .setURI(repoUrl)
-                .setDirectory(tempPath.toFile())
-                .setCredentialsProvider(new UsernamePasswordCredentialsProvider(githubToken, ""))
-                .call()) {
+            // 2. Παίρνουμε το Token από το Vault
+            System.out.println("🔑 [EXECUTOR] Step 2: Retrieving GitHub Token for user: " + username);
+            String githubToken = vaultService.getGithubToken(username);
+            if (githubToken == null || githubToken.isEmpty()) {
+                throw new RuntimeException("GitHub Token not found in Vault for user: " + username);
+            }
 
-            // Αποσυμπίεση του ZIP απευθείας στο root του cloned repo
-            unzipToRoot(job.getMasterZip(), tempPath);
+            // 3. Clone & Extract Logic
+            Path tempPath = Files.createTempDirectory("vortex-exec-");
+            System.out.println("📂 [EXECUTOR] Step 3: Created temp directory at: " + tempPath.toAbsolutePath());
 
-            // 4. Commit & Push
-            git.add().addFilepattern(".").call();
-            git.commit()
-                    .setMessage("Bram Vortex: Infrastructure and Pipelines Setup")
-                    .setAuthor("Bram Vortex", "no-reply@bramvortex.com")
-                    .call();
-
-            git.push()
+            System.out.println("🌐 [EXECUTOR] Step 4: Cloning repository: " + repoUrl);
+            try (Git git = Git.cloneRepository()
+                    .setURI(repoUrl)
+                    .setDirectory(tempPath.toFile())
                     .setCredentialsProvider(new UsernamePasswordCredentialsProvider(githubToken, ""))
-                    .call();
-        } finally {
-            FileUtils.deleteDirectory(tempPath.toFile());
+                    .call()) {
+
+                System.out.println("📦 [EXECUTOR] Step 5: Extracting infrastructure files to repository root...");
+                unzipToRoot(job.getMasterZip(), tempPath);
+
+                // 4. Commit & Push
+                System.out.println("📝 [EXECUTOR] Step 6: Committing changes...");
+                git.add().addFilepattern(".").call();
+                git.commit()
+                        .setMessage("Bram Vortex: Infrastructure and Pipelines Setup")
+                        .setAuthor("Bram Vortex", "no-reply@bramvortex.com")
+                        .call();
+
+                System.out.println("🚀 [EXECUTOR] Step 7: Pushing to GitHub...");
+                git.push()
+                        .setCredentialsProvider(new UsernamePasswordCredentialsProvider(githubToken, ""))
+                        .call();
+
+                System.out.println("🎉 [EXECUTOR] SUCCESS: All files pushed to " + repoUrl);
+
+            } finally {
+                FileUtils.deleteDirectory(tempPath.toFile());
+                System.out.println("🧹 [EXECUTOR] Cleanup: Temp directory deleted.");
+            }
+
+        } catch (Exception e) {
+            System.err.println("❌ [EXECUTOR FATAL ERROR] Deployment failed for Job " + jobId);
+            System.err.println("❌ [REASON]: " + e.getMessage());
+            e.printStackTrace(); // Εκτυπώνει όλο το stack trace στα logs
         }
     }
 
@@ -70,22 +97,16 @@ public class ExecutionService {
                 String entryName = entry.getName();
                 String finalPath;
 
-                // 1. Αν είναι το .github μέσα στο pipelines, αφαίρεσε το "pipelines/"
                 if (entryName.startsWith("pipelines/.github/")) {
                     finalPath = entryName.substring("pipelines/".length());
-                }
-                // 2. Αν είναι ο φάκελος pipelines (ή οτιδήποτε άλλο μέσα του εκτός του .github), αγνόησέ τον
-                else if (entryName.startsWith("pipelines/")) {
+                } else if (entryName.startsWith("pipelines/")) {
                     zis.closeEntry();
                     continue;
-                }
-                // 3. Όλα τα υπόλοιπα (terraform, ansible κλπ) μένουν ως έχουν
-                else {
+                } else {
                     finalPath = entryName;
                 }
 
                 Path newPath = targetPath.resolve(finalPath);
-
                 if (entry.isDirectory()) {
                     Files.createDirectories(newPath);
                 } else {

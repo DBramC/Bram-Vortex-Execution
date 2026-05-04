@@ -4,6 +4,9 @@ import com.christos_bramis.bram_vortex_execution.entity.ValidatorJob;
 import com.christos_bramis.bram_vortex_execution.repository.ValidatorJobsRepository;
 import org.apache.tomcat.util.http.fileupload.FileUtils;
 import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.transport.PushResult;
+import org.eclipse.jgit.transport.RefSpec;
+import org.eclipse.jgit.transport.RemoteRefUpdate;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -71,12 +74,24 @@ public class ExecutionService {
                         .setAuthor("Bram Vortex", "no-reply@bramvortex.com")
                         .call();
 
-                System.out.println("🚀 [EXECUTOR] Step 7: Pushing to GitHub...");
-                git.push()
+                System.out.println("🚀 [EXECUTOR] Step 7: Pushing to GitHub (branch: main)...");
+
+                Iterable<PushResult> results = git.push()
+                        .setRemote("origin")
+                        .setRefSpecs(new RefSpec("refs/heads/main:refs/heads/main")) // Επιβολή push στο main
                         .setCredentialsProvider(new UsernamePasswordCredentialsProvider(githubToken, ""))
                         .call();
 
-                System.out.println("🎉 [EXECUTOR] SUCCESS: All files pushed to " + repoUrl);
+                // Έλεγχος αν το push έγινε όντως δεκτό από το GitHub
+                for (PushResult result : results) {
+                    for (RemoteRefUpdate update : result.getRemoteUpdates()) {
+                        if (update.getStatus() != RemoteRefUpdate.Status.OK &&
+                                update.getStatus() != RemoteRefUpdate.Status.UP_TO_DATE) {
+                            throw new RuntimeException("Push failed with status: " + update.getStatus());
+                        }
+                    }
+                }
+                System.out.println("🎉 [EXECUTOR] SUCCESS: All files pushed to main branch!");
 
             } finally {
                 FileUtils.deleteDirectory(tempPath.toFile());

@@ -76,20 +76,24 @@ public class ExecutionService {
                         .setAuthor("Bram Vortex", "no-reply@bramvortex.com")
                         .call();
 
+                // Step 7: Pushing to GitHub
                 System.out.println("🚀 [EXECUTOR] Step 7: Pushing to GitHub (branch: main)...");
 
                 Iterable<PushResult> results = git.push()
                         .setRemote("origin")
-                        // Αυτό αναγκάζει το τοπικό master/main να πάει στο remote main
-                        .setRefSpecs(new org.eclipse.jgit.transport.RefSpec("HEAD:refs/heads/main"))
+                        .setRefSpecs(new RefSpec("HEAD:refs/heads/main"))
                         .setCredentialsProvider(new UsernamePasswordCredentialsProvider(githubToken, ""))
                         .call();
-                // Έλεγχος αν το push έγινε όντως δεκτό από το GitHub
+
                 for (PushResult result : results) {
                     for (RemoteRefUpdate update : result.getRemoteUpdates()) {
                         if (update.getStatus() != RemoteRefUpdate.Status.OK &&
                                 update.getStatus() != RemoteRefUpdate.Status.UP_TO_DATE) {
-                            throw new RuntimeException("Push failed with status: " + update.getStatus());
+
+                            // ΕΔΩ ΕΙΝΑΙ Η ΛΥΣΗ: Τραβάμε το μήνυμα του server
+                            String serverMessage = update.getMessage();
+                            throw new RuntimeException("Push failed! Status: " + update.getStatus() +
+                                    " | Server Message: " + (serverMessage != null ? serverMessage : "No detailed message"));
                         }
                     }
                 }

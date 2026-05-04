@@ -17,17 +17,24 @@ public class Execution {
         this.executionService = executionService;
     }
 
+    // Στο Controller του Execution Service
     @PostMapping("/execute")
     public ResponseEntity<?> run(@RequestBody Map<String, Object> payload, Authentication auth) {
-        String username = auth.getName(); // Από το JWT Filter[cite: 3]
-        String jobId = payload.get("jobId").toString();
-        String repoUrl = payload.get("repoUrl").toString();
+        // 1. Log άμεσα μόλις φτάσει το αίτημα
+        System.out.println("📥 [EXECUTOR] Request received for Job ID: " + payload.get("jobId"));
 
         try {
+            String username = auth.getName();
+            String jobId = payload.get("jobId").toString();
+            String repoUrl = payload.get("repoUrl").toString();
+
+            // 2. Κλήση της ασύγχρονης μεθόδου
             executionService.processDeployment(username, jobId, repoUrl);
-            return ResponseEntity.ok("Success: Master ZIP deployed to root.");
+
+            return ResponseEntity.accepted().body("Started");
         } catch (Exception e) {
-            return ResponseEntity.status(500).body("Error: " + e.getMessage());
+            System.err.println("❌ [EXECUTOR ERROR] " + e.getMessage());
+            return ResponseEntity.internalServerError().build();
         }
     }
 

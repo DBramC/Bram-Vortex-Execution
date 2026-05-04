@@ -41,7 +41,7 @@ public class SecurityConfig {
 
                 // 4. Κανόνες Πρόσβασης
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/execution/execute/**").authenticated()
+                        .requestMatchers("/execution/execute").authenticated()
                         .anyRequest().authenticated()
                 )
 

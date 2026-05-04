@@ -34,7 +34,7 @@ public class ExecutionService {
         try {
             // 1. Τραβάμε το Job από τη βάση
             System.out.println("🔍 [EXECUTOR] Step 1: Fetching master_zip from database...");
-            ValidatorJob job = validatorJobsRepository.findById(jobId)
+            ValidatorJob job = validatorJobsRepository.findByAnalysisJobId(jobId)
                     .orElseThrow(() -> new RuntimeException("Job ID " + jobId + " not found in database. Check if table name is correct!"));
 
             if (job.getMasterZip() == null || job.getMasterZip().length == 0) {

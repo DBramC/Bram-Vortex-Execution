@@ -10,6 +10,9 @@ import org.eclipse.jgit.transport.RemoteRefUpdate;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -17,6 +20,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -137,5 +143,139 @@ public class ExecutionService {
                 zis.closeEntry();
             }
         }
+    }
+
+    public Map<String, Double> calculateCosts(String targetCloud, String aiSkuResponse) {
+        Map<String, Double> costResults = new HashMap<>();
+        ObjectMapper mapper = new ObjectMapper();
+
+        try {
+            // Μετατρέπουμε το JSON απευθείας σε Java Map για να αποφύγουμε τα errors του Iterator
+            Map<String, JsonNode> skusMap = mapper.readValue(
+                    aiSkuResponse,
+                    new TypeReference<Map<String, JsonNode>>() {}
+            );
+
+            // Κλασικό Java for-loop πάνω στο Map
+            for (Map.Entry<String, JsonNode> entry : skusMap.entrySet()) {
+                String computeType = entry.getKey(); // "Virtual Machine", "Container", ή "Kubernetes"
+                JsonNode specs = entry.getValue();
+
+                // 1. Δημιουργία δυναμικού Terraform κώδικα (HCL)
+                String hclCode = generateHclForCost(targetCloud, computeType, specs);
+
+                // 2. Αν δεν μπορέσαμε να παράγουμε HCL (π.χ. άγνωστος provider), βάζουμε 0.0
+                if (hclCode == null || hclCode.isEmpty()) {
+                    costResults.put(computeType, 0.0);
+                    continue;
+                }
+
+                // 3. Αποθήκευση του HCL σε ένα προσωρινό main.tf
+                Path tempDir = Files.createTempDirectory("infracost-" + computeType.replace(" ", ""));
+                File mainTf = new File(tempDir.toFile(), "main.tf");
+                Files.writeString(mainTf.toPath(), hclCode);
+
+                // 4. Εκτέλεση του Infracost CLI πάνω στον προσωρινό φάκελο
+                double cost = runInfracostCli(tempDir.toString());
+                costResults.put(computeType, cost);
+
+                // 5. Διαγραφή του προσωρινού φακέλου (Cleanup)
+                mainTf.delete();
+                tempDir.toFile().delete();
+            }
+        } catch (Exception e) {
+            System.err.println("Error calculating costs: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        return costResults;
+    }
+
+    private String generateHclForCost(String targetCloud, String computeType, JsonNode specs) {
+        String hcl = "";
+
+        try {
+            // -- AWS MAPPINGS --
+            if (targetCloud.equalsIgnoreCase("AWS") || targetCloud.equalsIgnoreCase("Amazon Web Services")) {
+                if (computeType.equals("Virtual Machine")) {
+                    String instanceType = specs.get("instance_type").asText(); // ΔΥΝΑΜΙΚΟ 100%
+                    hcl = String.format("resource \"aws_instance\" \"cost_calc\" { instance_type = \"%s\" }", instanceType);
+                }
+                else if (computeType.equals("Kubernetes")) {
+                    String nodeType = specs.get("instance_type").asText();
+                    int count = specs.has("node_count") ? specs.get("node_count").asInt() : 2; // Το count ας έχει ένα fallback
+                    hcl = String.format("""
+                resource "aws_eks_node_group" "cost_calc" {
+                  instance_types = ["%s"]
+                  scaling_config { desired_size = %d }
+                }
+                """, nodeType, count);
+                }
+                else if (computeType.equals("Container")) {
+                    String cpu = specs.get("cpu").asText();
+                    String memory = specs.get("memory").asText();
+                    hcl = String.format("resource \"aws_ecs_task_definition\" \"cost_calc\" { requires_compatibilities = [\"FARGATE\"] cpu = \"%s\" memory = \"%s\" }", cpu, memory);
+                }
+            }
+
+            // -- AZURE MAPPINGS --
+            else if (targetCloud.equalsIgnoreCase("Azure")) {
+                if (computeType.equals("Virtual Machine")) {
+                    String size = specs.get("instance_type").asText(); // ΔΥΝΑΜΙΚΟ 100%
+                    hcl = String.format("resource \"azurerm_linux_virtual_machine\" \"cost_calc\" { size = \"%s\" }", size);
+                }
+                else if (computeType.equals("Kubernetes")) {
+                    String size = specs.get("instance_type").asText();
+                    int count = specs.has("node_count") ? specs.get("node_count").asInt() : 2;
+                    hcl = String.format("""
+                resource "azurerm_kubernetes_cluster" "cost_calc" {
+                  default_node_pool { vm_size = "%s" node_count = %d }
+                }
+                """, size, count);
+                }
+                else if (computeType.equals("Container")) {
+                    String cpu = specs.get("cpu").asText();
+                    String memory = specs.get("memory").asText();
+                    hcl = String.format("""
+                resource "azurerm_container_group" "cost_calc" {
+                  container {
+                    cpu    = %s
+                    memory = %s
+                  }
+                }
+                """, cpu, memory);
+                }
+            }
+        } catch (NullPointerException e) {
+            System.err.println("Το AI δεν επέστρεψε τα σωστά πεδία για το " + computeType);
+            return ""; // Επιστρέφει κενό HCL, άρα η κοστολόγηση αυτού του τύπου θα είναι 0.0
+        }
+
+        return hcl;
+    }
+
+    private double runInfracostCli(String directoryPath) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder(
+                    "infracost", "breakdown",
+                    "--path", directoryPath,
+                    "--format", "json"
+            );
+
+            Process process = pb.start();
+            String jsonOutput = new String(process.getInputStream().readAllBytes());
+            process.waitFor();
+
+            // Διαβάζουμε το "totalMonthlyCost" από το output του Infracost
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode root = mapper.readTree(jsonOutput);
+
+            if (root.has("totalMonthlyCost")) {
+                return root.get("totalMonthlyCost").asDouble();
+            }
+        } catch (Exception e) {
+            System.err.println("Infracost Error: " + e.getMessage());
+        }
+        return 0.0;
     }
 }

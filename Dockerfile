@@ -1,7 +1,6 @@
 # ===============================
 # 🏗️ STAGE 1: Build (Maven)
 # ===============================
-# Χρησιμοποιούμε εικόνα που έχει Maven ΚΑΙ Java 21
 FROM maven:3.9-eclipse-temurin-21 AS build
 
 WORKDIR /app
@@ -10,21 +9,25 @@ WORKDIR /app
 COPY pom.xml .
 COPY src ./src
 
-# Χτίζουμε το JAR (παραλείπουμε τα tests για ταχύτητα στο build)
+# Χτίζουμε το JAR
 RUN mvn clean package -DskipTests
 
 # ===============================
-# 🚀 STAGE 2: Run (Java Runtime)
+# 🚀 STAGE 2: Run (Java Runtime + Infracost)
 # ===============================
-# Εδώ χρησιμοποιούμε την εικόνα που είχες κι εσύ (Runtime only)
 FROM eclipse-temurin:21-jdk-jammy
 
 LABEL authors="DaBram"
 
 WORKDIR /app
 
-# Μαγεία: Παίρνουμε το JAR από το Stage 1 και το μετονομάζουμε σε app.jar
-# Έτσι δεν σε νοιάζει αν αλλάξει το version στο pom.xml (0.0.1 -> 0.0.2)
+# 🛠️ Εγκατάσταση Infracost CLI
+# Χρειαζόμαστε το curl για να κατεβάσουμε το installation script
+RUN apt-get update && apt-get install -y curl && \
+    curl -fsSL https://raw.githubusercontent.com/infracost/infracost/master/scripts/install.sh | sh && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Αντιγράφουμε το JAR από το Stage 1
 COPY --from=build /app/target/*.jar app.jar
 
 # Τρέχουμε το app

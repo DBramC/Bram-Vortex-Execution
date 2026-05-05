@@ -38,4 +38,23 @@ public class Execution {
         }
     }
 
+    @PostMapping("/analyze-costs")
+    public ResponseEntity<Map<String, Double>> analyzeCosts(
+            @RequestHeader("X-Target-Cloud") String targetCloud,
+            @RequestBody String aiSkuResponse) {
+
+        System.out.println("💸 [EXECUTOR] Cost Analysis requested for cloud: " + targetCloud);
+
+        try {
+            // Κλήση της συνάρτησης που φτιάξαμε στο ExecutionService
+            Map<String, Double> costs = executionService.calculateCosts(targetCloud, aiSkuResponse);
+            return ResponseEntity.ok(costs);
+
+        } catch (Exception e) {
+            System.err.println("❌ [EXECUTOR ERROR] Infracost failed: " + e.getMessage());
+            // Επιστρέφουμε ένα άδειο Map σε περίπτωση λάθους για να μην "σκάσει" το Frontend
+            return ResponseEntity.internalServerError().body(Map.of());
+        }
+    }
+
 }

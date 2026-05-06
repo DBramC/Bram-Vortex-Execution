@@ -194,59 +194,115 @@ public class ExecutionService {
 
         return costResults;
     }
-
     private String generateHclForCost(String targetCloud, String computeType, JsonNode specs) {
-        try {
-            // --- AWS ---
-            if (targetCloud.equalsIgnoreCase("AWS")) {
-                return switch (computeType) {
-                    case "Virtual Machine" ->
-                            String.format("resource \"aws_instance\" \"v\" { instance_type = \"%s\" }",
-                                    specs.get("instance_type").asText());
-                    case "Kubernetes" ->
-                            String.format("resource \"aws_eks_node_group\" \"k\" { instance_types = [\"%s\"] scaling_config { desired_size = %d } }",
-                                    specs.get("instance_type").asText(), specs.path("node_count").asInt(2));
-                    case "Container" ->
-                            String.format("resource \"aws_ecs_task_definition\" \"c\" { requires_compatibilities = [\"FARGATE\"] cpu = \"%s\" memory = \"%s\" }",
-                                    specs.get("cpu").asText(), specs.get("memory").asText());
-                    default -> "";
-                };
-            }
+        // Δεν υπάρχει try-catch: αν κάποιο .get() επιστρέψει null, το .asText() θα πετάξει NullPointerException
 
-            // --- AZURE ---
-            else if (targetCloud.equalsIgnoreCase("Azure")) {
-                return switch (computeType) {
-                    case "Virtual Machine" ->
-                            String.format("resource \"azurerm_linux_virtual_machine\" \"v\" { size = \"%s\" }",
-                                    specs.get("instance_type").asText());
-                    case "Kubernetes" ->
-                            String.format("resource \"azurerm_kubernetes_cluster\" \"k\" { default_node_pool { vm_size = \"%s\" node_count = %d } }",
-                                    specs.get("instance_type").asText(), specs.path("node_count").asInt(2));
-                    case "Container" ->
-                            String.format("resource \"azurerm_container_group\" \"c\" { container { cpu = %s; memory = %s } }",
-                                    specs.get("cpu").asText(), specs.get("memory").asText());
-                    default -> "";
-                };
-            }
+        if (targetCloud.equalsIgnoreCase("AWS")) {
+            return switch (computeType) {
+                case "Virtual Machine" ->
+                        String.format("resource \"aws_instance\" \"v\" { instance_type = \"%s\" }",
+                                specs.get("instance_type").asText());
 
-            // --- GCP (Νέα προσθήκη) ---
-            else if (targetCloud.equalsIgnoreCase("GCP")) {
-                return switch (computeType) {
-                    case "Virtual Machine" ->
-                            String.format("resource \"google_compute_instance\" \"v\" { machine_type = \"%s\" zone = \"us-central1-a\" }",
-                                    specs.get("instance_type").asText());
-                    case "Kubernetes" ->
-                            String.format("resource \"google_container_node_pool\" \"k\" { machine_type = \"%s\" node_count = %d }",
-                                    specs.get("instance_type").asText(), specs.path("node_count").asInt(2));
-                    case "Container" ->
-                            String.format("resource \"google_cloud_run_v2_service\" \"c\" { template { containers { resources { limits = { cpu = \"%s\", memory = \"%s\" } } } } }",
-                                    specs.get("cpu").asText(), specs.get("memory").asText());
-                    default -> "";
-                };
-            }
-        } catch (Exception e) {
-            System.err.println("⚠️ [EXECUTION] AI provided invalid specs for " + computeType);
+                case "Container" ->
+                        String.format("""
+                    resource "aws_ecs_task_definition" "c" {
+                      requires_compatibilities = ["FARGATE"]
+                      cpu                      = "%s"
+                      memory                   = "%s"
+                    }
+                    """,
+                                specs.get("cpu").asText(),
+                                specs.get("memory").asText());
+
+                case "Kubernetes" ->
+                        String.format("""
+                    resource "aws_eks_node_group" "k" {
+                      cluster_name   = "cluster"
+                      instance_types = ["%s"]
+                      scaling_config {
+                        desired_size = %d
+                      }
+                    }
+                    """,
+                                specs.get("instance_type").asText(),
+                                specs.get("node_count").asInt()); // Θα κρασάρει αν λείπει το node_count
+
+                default -> "";
+            };
         }
+
+        if (targetCloud.equalsIgnoreCase("Azure")) {
+            return switch (computeType) {
+                case "Virtual Machine" ->
+                        String.format("resource \"azurerm_linux_virtual_machine\" \"v\" { size = \"%s\" }",
+                                specs.get("instance_type").asText());
+
+                case "Container" ->
+                        String.format("""
+                    resource "azurerm_container_group" "c" {
+                      container {
+                        cpu    = %s
+                        memory = %s
+                      }
+                    }
+                    """,
+                                specs.get("cpu").asText(),
+                                specs.get("memory").asText());
+
+                case "Kubernetes" ->
+                        String.format("""
+                    resource "azurerm_kubernetes_cluster" "k" {
+                      default_node_pool {
+                        vm_size    = "%s"
+                        node_count = %d
+                      }
+                    }
+                    """,
+                                specs.get("instance_type").asText(),
+                                specs.get("node_count").asInt());
+
+                default -> "";
+            };
+        }
+
+        if (targetCloud.equalsIgnoreCase("GCP")) {
+            return switch (computeType) {
+                case "Virtual Machine" ->
+                        String.format("resource \"google_compute_instance\" \"v\" { machine_type = \"%s\" }",
+                                specs.get("instance_type").asText());
+
+                case "Container" ->
+                        String.format("""
+                    resource "google_cloud_run_v2_service" "c" {
+                      template {
+                        containers {
+                          resources {
+                            limits = {
+                              cpu    = "%s"
+                              memory = "%s"
+                            }
+                          }
+                        }
+                      }
+                    }
+                    """,
+                                specs.get("cpu").asText(),
+                                specs.get("memory").asText());
+
+                case "Kubernetes" ->
+                        String.format("""
+                    resource "google_container_node_pool" "k" {
+                      node_config { machine_type = "%s" }
+                      node_count = %d
+                    }
+                    """,
+                                specs.get("instance_type").asText(),
+                                specs.get("node_count").asInt());
+
+                default -> "";
+            };
+        }
+
         return "";
     }
 

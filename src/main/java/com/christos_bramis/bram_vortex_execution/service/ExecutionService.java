@@ -195,8 +195,8 @@ public class ExecutionService {
         return costResults;
     }
     private String generateHclForCost(String targetCloud, String computeType, JsonNode specs) {
-        // ΣΗΜΑΝΤΙΚΟ: Δεν υπάρχει try-catch. Αν λείπει πεδίο από το specs, η μέθοδος κρασάρει
-        // επίτηδες για να διασφαλιστεί η ακεραιότητα των δεδομένων.
+        // ΣΗΜΑΝΤΙΚΟ: Fail-fast προσέγγιση. Αν λείπει πεδίο, το NullPointerException
+        // θα μας δείξει αμέσως ότι το AI απέτυχε στο SKU Generation.
 
         if (targetCloud.equalsIgnoreCase("AWS")) {
             return switch (computeType) {
@@ -208,10 +208,19 @@ public class ExecutionService {
                         String.format("""
                 resource "aws_ecs_task_definition" "c" {
                   family                   = "vortex-task"
-                  network_mode             = "awsvpc" # Υποχρεωτικό για AWS Fargate Pricing
+                  network_mode             = "awsvpc"
                   requires_compatibilities = ["FARGATE"]
                   cpu                      = "%s"
                   memory                   = "%s"
+                  container_definitions    = jsonencode([{ name = "v", image = "v" }])
+                }
+                resource "aws_ecs_service" "s" {
+                  name            = "vortex-service"
+                  cluster         = "vortex-cluster"
+                  task_definition = aws_ecs_task_definition.c.arn
+                  launch_type     = "FARGATE" # Ξεκλειδώνει το Fargate pricing
+                  desired_count   = 1
+                  network_configuration { subnets = ["subnet-1"] }
                 }
                 """,
                                 specs.get("cpu").asText(),
@@ -221,14 +230,12 @@ public class ExecutionService {
                         String.format("""
                 resource "aws_eks_cluster" "main" {
                   name     = "vortex-cluster"
-                  vpc_config { subnet_ids = ["subnet-12345"] }
+                  vpc_config { subnet_ids = ["subnet-1"] }
                 }
                 resource "aws_eks_node_group" "k" {
                   cluster_name   = aws_eks_cluster.main.name
                   instance_types = ["%s"]
-                  scaling_config {
-                    desired_size = %d
-                  }
+                  scaling_config { desired_size = %d }
                 }
                 """,
                                 specs.get("instance_type").asText(),
@@ -245,14 +252,21 @@ public class ExecutionService {
                                 specs.get("instance_type").asText());
 
                 case "Container" ->
+                    // Azure Container Instances (ACI) pricing
                         String.format("""
                 resource "azurerm_container_group" "c" {
                   name                = "vortex-aci"
-                  os_type             = "Linux" # Απαραίτητο για Azure pricing
+                  location            = "eastus"
+                  resource_group_name = "rg"
+                  os_type             = "Linux" 
+                  ip_address_type     = "Public"
+                  dns_name_label      = "vortex-app"
                   container {
-                    name   = "vortex-app"
+                    name   = "v"
+                    image  = "v"
                     cpu    = %s
                     memory = %s
+                    ports { port = 80, protocol = "TCP" }
                   }
                 }
                 """,
@@ -262,11 +276,16 @@ public class ExecutionService {
                 case "Kubernetes" ->
                         String.format("""
                 resource "azurerm_kubernetes_cluster" "k" {
-                  dns_prefix = "vortex-aks"
+                  name                = "vortex-aks"
+                  location            = "eastus"
+                  resource_group_name = "rg"
+                  dns_prefix          = "vortex"
                   default_node_pool {
+                    name       = "default"
                     vm_size    = "%s"
                     node_count = %d
                   }
+                  identity { type = "SystemAssigned" }
                 }
                 """,
                                 specs.get("instance_type").asText(),
@@ -279,15 +298,18 @@ public class ExecutionService {
         if (targetCloud.equalsIgnoreCase("GCP")) {
             return switch (computeType) {
                 case "Virtual Machine" ->
-                        String.format("resource \"google_compute_instance\" \"v\" { machine_type = \"%s\" zone = \"us-central1-a\" }",
+                        String.format("resource \"google_compute_instance\" \"v\" { name = \"v\", machine_type = \"%s\" zone = \"us-central1-a\" }",
                                 specs.get("instance_type").asText());
 
                 case "Container" ->
+                    // Cloud Run V2 pricing
                         String.format("""
                 resource "google_cloud_run_v2_service" "c" {
+                  name     = "vortex-service"
                   location = "us-central1"
                   template {
                     containers {
+                      image = "v"
                       resources {
                         limits = {
                           cpu    = "%s"
@@ -303,16 +325,22 @@ public class ExecutionService {
 
                 case "Kubernetes" ->
                         String.format("""
+                resource "google_container_cluster" "primary" {
+                  name     = "vortex-gke"
+                  location = "us-central1-a"
+                  initial_node_count = 1
+                }
                 resource "google_container_node_pool" "k" {
-                  cluster = "vortex-cluster"
+                  name       = "vortex-pool"
+                  cluster    = google_container_cluster.primary.name
+                  node_count = %d
                   node_config {
                     machine_type = "%s"
                   }
-                  node_count = %d
                 }
                 """,
-                                specs.get("instance_type").asText(),
-                                specs.get("node_count").asInt());
+                                specs.get("node_count").asInt(),
+                                specs.get("instance_type").asText());
 
                 default -> "";
             };
